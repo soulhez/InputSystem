@@ -331,7 +331,7 @@ namespace UnityEngine.Experimental.Input.Plugins.Switch
     /// An NPad controller for Switch, which can be a Joy-Con.
     /// </summary>
     /// <seealso cref="NPadInputState"/>
-    [InputControlLayout(stateType = typeof(NPadInputState), displayName = "Switch Controller (on Switch)")]
+    [InputControlLayout(stateType = typeof(NPadInputState), commonUsages = new[] { "Vertical", "Horizontal" }, displayName = "Switch Controller (on Switch)")]
     public class NPad : Gamepad, INPadRumble
     {
         public ButtonControl leftSL { get; private set; }
@@ -484,8 +484,33 @@ namespace UnityEngine.Experimental.Input.Plugins.Switch
                 m_NpadId = command.npadId;
                 m_Orientation = command.orientation;
                 m_StyleMask = command.styleMask;
-                ReadNNColorIntoJoyConColor(ref m_LeftControllerColor, command.colorLeftMain, command.colorLeftSub);
-                ReadNNColorIntoJoyConColor(ref m_RightControllerColor, command.colorRightMain, command.colorRightSub);
+                m_LeftControllerColor = NNColorToJoyConColor(command.colorLeftMain, command.colorLeftSub);
+                m_RightControllerColor = NNColorToJoyConColor(command.colorRightMain, command.colorRightSub);
+
+                switch (m_Orientation)
+                {
+                    case Orientation.Vertical:
+                        InputSystem.SetDeviceUsage(this, CommonUsages.Vertical);
+                        break;
+
+                    case Orientation.Horizontal:
+                        InputSystem.SetDeviceUsage(this, CommonUsages.Horizontal);
+                        break;
+                }
+
+                if (m_StyleMask == NpadStyle.JoyDual)
+                {
+                    InputSystem.AddDeviceUsage(this, CommonUsages.RightHand);
+                    InputSystem.AddDeviceUsage(this, CommonUsages.LeftHand);
+                }
+                else if (m_StyleMask == NpadStyle.JoyRight)
+                {
+                    InputSystem.AddDeviceUsage(this, CommonUsages.RightHand);
+                }
+                else if (m_StyleMask == NpadStyle.JoyLeft)
+                {
+                    InputSystem.AddDeviceUsage(this, CommonUsages.LeftHand);
+                }
             }
         }
 
@@ -493,8 +518,12 @@ namespace UnityEngine.Experimental.Input.Plugins.Switch
         public long SetOrientationToSingleJoyCon(Orientation _orientation)
         {
             var supportCommand = NpadDeviceIOCTLSetOrientation.Create(_orientation);
+            var ret = ExecuteCommand(ref supportCommand);
 
-            return ExecuteCommand(ref supportCommand);
+            if (ret > 0)
+                RefreshConfiguration();
+
+            return ret;
         }
 
         public long StartSixAxisSensor()
@@ -523,17 +552,27 @@ namespace UnityEngine.Experimental.Input.Plugins.Switch
             acceleration = builder.GetControl<Vector3Control>(this, "acceleration");
             attitude = builder.GetControl<QuaternionControl>(this, "attitude");
             angularVelocity = builder.GetControl<Vector3Control>(this, "angularVelocity");
+
+            RefreshConfiguration();
         }
 
-        private static void ReadNNColorIntoJoyConColor(ref JoyConColor controllerColor, int mainColor, int subColor)
+        private static JoyConColor NNColorToJoyConColor(int mainColor, int subColor)
         {
-            controllerColor.Main = ConvertNNColorToColor32(mainColor);
-            controllerColor.Sub = ConvertNNColorToColor32(subColor);
+            JoyConColor controllerColor;
+
+            controllerColor.Main = NNColorToColor32(mainColor);
+            controllerColor.Sub = NNColorToColor32(subColor);
+
+            return controllerColor;
         }
 
-        private static Color32 ConvertNNColorToColor32(int color)
+        public static Color32 NNColorToColor32(int color)
         {
             return new Color32((byte)(color & 0xFF), (byte)((color >> 8) & 0xFF), (byte)((color >> 16) & 0xFF), (byte)((color >> 24) & 0xFF));
+        }
+        public static int Color32ToNNColor(Color32 color)
+        {
+            return (int)color.r | ((int)color.g << 8) | ((int)color.b << 16) | ((int)color.a << 24);
         }
 
         public override void PauseHaptics()
